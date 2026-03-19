@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Generated k8s manifests
+k8s/deployment.yaml
+k8s/pvc.yaml
+
+# Temp segment data
+scripts/tmp/
+
+# Tester script output and virtualenvs
+scripts/segments/
+scripts/.venv/
+scripts/webhook-subscriber-example/.venv/
+scripts/webhook-subscriber-example/segments/
+**/.venv/
+**/tmp/

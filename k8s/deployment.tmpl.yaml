@@ -1,0 +1,173 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hls-ring-recorder
+  namespace: recorder
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hls-ring-recorder
+  template:
+    metadata:
+      labels:
+        app: hls-ring-recorder
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: hls-ring-recorder
+        image: ${IMAGE_REPO}:${IMAGE_TAG}
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        env:
+        - name: HLS_STREAM
+          value: "${HLS_STREAM}"
+        - name: SEGMENT_TIME
+          value: "${SEGMENT_TIME}"
+        - name: SEGMENT_WRAP
+          value: "${SEGMENT_WRAP}"
+        - name: POLL_INTERVAL
+          value: "${POLL_INTERVAL}"
+        - name: BLANK_TIMEOUT
+          value: "${BLANK_TIMEOUT}"
+        - name: LUMA_THRESHOLD
+          value: "${LUMA_THRESHOLD}"
+        - name: WEBHOOK_URL
+          value: "${WEBHOOK_URL}"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "test $(( $(date +%s) - $(cat /tmp/heartbeat 2>/dev/null || echo 0) )) -lt 90"
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - "test -f /tmp/heartbeat"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+        - name: hls-segments
+          mountPath: /data
+        - name: recorder-tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+      - name: ntfy
+        image: binwiederhier/ntfy:v2.19.2
+        args: ["serve"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 80
+        livenessProbe:
+          httpGet:
+            path: /v1/health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /v1/health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+      - name: nginx
+        image: openresty/openresty:1.29.2.1-noble
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        ports:
+        - containerPort: 8080
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+        - name: hls-segments
+          mountPath: /data
+          readOnly: true
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+        - name: openresty-run
+          mountPath: /var/run/openresty
+        - name: openresty-logs
+          mountPath: /usr/local/openresty/nginx/logs
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      terminationGracePeriodSeconds: ${TERMINATION_GRACE}
+      imagePullSecrets:
+      - name: dockerhub
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      nodeSelector:
+        ${NODE_SELECTOR_KEY}: ${NODE_SELECTOR_VALUE}
+      volumes:
+      - name: hls-segments
+        persistentVolumeClaim:
+          claimName: hls-segments
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+      - name: openresty-run
+        emptyDir: {}
+      - name: openresty-logs
+        emptyDir: {}
+      - name: recorder-tmp
+        emptyDir: {}

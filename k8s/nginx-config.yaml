@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: recorder
+data:
+  default.conf: |
+    lua_shared_dict md5_cache 10m;
+
+    server {
+        listen 8080;
+        root /data;
+        access_log /dev/stdout;
+        error_log /dev/stderr warn;
+        autoindex on;
+        autoindex_exact_size off;
+        autoindex_localtime on;
+
+        header_filter_by_lua_block {
+            if ngx.req.get_method() ~= "HEAD" then
+                return
+            end
+            local path = ngx.var.request_filename
+            local f = io.open(path, "rb")
+            if not f then return end
+            local size = f:seek("end")
+            f:seek("set", 0)
+            -- key is path:size; a 600s TTL ensures ring-buffer rewrites are detected
+            -- without needing mtime (lfs is not bundled in the standard OpenResty image)
+            local key = path .. ":" .. size
+            local cache = ngx.shared.md5_cache
+            local cached = cache:get(key)
+            if cached then
+                f:close()
+                ngx.header["Content-MD5"] = cached
+                return
+            end
+            local md5 = require "resty.md5"
+            local m = md5:new()
+            while true do
+                local chunk = f:read(65536)
+                if not chunk then break end
+                m:update(chunk)
+            end
+            f:close()
+            local digest = ngx.encode_base64(m:final())
+            cache:set(key, digest, 600)
+            ngx.header["Content-MD5"] = digest
+        }
+    }
