@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     inotify-tools \
     jq \
+    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ffmpeg-builder /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
