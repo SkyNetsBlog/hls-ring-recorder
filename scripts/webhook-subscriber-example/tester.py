@@ -124,6 +124,7 @@ def subscribe(args) -> None:
 
             except KeyboardInterrupt:
                 print("\nStopped.")
+                executor.shutdown(wait=False, cancel_futures=True)
                 return
             except Exception as exc:
                 print(f"Connection error: {exc}. Reconnecting in 5s...")

@@ -36,12 +36,15 @@ data:
             if not f then return end
             local md5 = require "resty.md5"
             local m = md5:new()
-            while true do
-                local chunk = f:read(65536)
-                if not chunk then break end
-                m:update(chunk)
-            end
+            local ok, err = pcall(function()
+                while true do
+                    local chunk = f:read(65536)
+                    if not chunk then break end
+                    m:update(chunk)
+                end
+            end)
             f:close()
+            if not ok then return end
             ngx.header["Content-MD5"] = ngx.encode_base64(m:final())
         }
     }
