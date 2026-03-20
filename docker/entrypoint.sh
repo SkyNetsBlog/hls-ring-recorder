@@ -19,14 +19,16 @@ atomize_segments() {
     # /tmp is ephemeral so the sentinel clears on pod restart.
     if [ ! -f /tmp/.atomize_initialized ]; then
         touch /tmp/.atomize_initialized
+        local max_n=-1
         for f in "$HLS_TMP"/*.ts; do
             [ -f "$f" ] || continue
             local name; name=$(basename "$f")
             mv "$f" "/data/$name"
             echo "Recovered partial segment from previous run: $name"
             local n=${name#segment_}; n=${n%.ts}
-            echo $(( (10#$n + 1) % SEGMENT_WRAP )) > /data/.next_segment
+            [ $(( 10#$n )) -gt "$max_n" ] && max_n=$(( 10#$n ))
         done
+        [ "$max_n" -ge 0 ] && echo $(( (max_n + 1) % SEGMENT_WRAP )) > /data/.next_segment
     fi
 
     inotifywait -m -e close_write --format '%f' "$HLS_TMP" 2>/dev/null \

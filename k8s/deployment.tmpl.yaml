@@ -85,19 +85,22 @@ spec:
           capabilities:
             drop:
               - ALL
+        env:
+        - name: NTFY_LISTEN_HTTP
+          value: ":8081"
         ports:
-        - containerPort: 80
+        - containerPort: 8081
         livenessProbe:
           httpGet:
             path: /v1/health
-            port: 80
+            port: 8081
           initialDelaySeconds: 10
           periodSeconds: 30
           failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /v1/health
-            port: 80
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
           failureThreshold: 3

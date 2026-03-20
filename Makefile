@@ -8,7 +8,7 @@ export SEGMENT_WRAP        ?= 400
 export POLL_INTERVAL       ?= 15
 export BLANK_TIMEOUT       ?= 60
 export LUMA_THRESHOLD      ?= 15
-export WEBHOOK_URL         ?= http://localhost:80/ring-segments
+export WEBHOOK_URL         ?= http://localhost:8081/ring-segments
 export TERMINATION_GRACE   ?= 15
 export PVC_SIZE            ?= 10Gi
 FFMPEG_CFLAGS              ?= -O3 -march=skylake

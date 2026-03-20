@@ -25,9 +25,9 @@ data:
             if not f then return end
             local size = f:seek("end")
             f:seek("set", 0)
-            -- key is path:size; a 600s TTL ensures ring-buffer rewrites are detected
-            -- without needing mtime (lfs is not bundled in the standard OpenResty image)
-            local key = path .. ":" .. size
+            local head = f:read(8) or ""
+            f:seek("set", 0)
+            local key = path .. ":" .. size .. ":" .. head
             local cache = ngx.shared.md5_cache
             local cached = cache:get(key)
             if cached then

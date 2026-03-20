@@ -14,5 +14,5 @@ spec:
     nodePort: 30080
   - name: ntfy
     port: 80
-    targetPort: 80
+    targetPort: 8081
     nodePort: 30081
