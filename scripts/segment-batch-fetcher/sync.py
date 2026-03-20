@@ -17,6 +17,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
@@ -39,8 +41,23 @@ class PrideTqdm(tqdm):
         return "".join(result)
 
 
-def fetch_ts_urls(url):
-    r = requests.get(url, timeout=30)
+def _make_session():
+    session = requests.Session()
+    retry = Retry(
+        total=4,
+        backoff_factor=1,       # waits 1s, 2s, 4s between attempts
+        status_forcelist=[502, 503, 504],
+        allowed_methods={"HEAD", "GET"},
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def fetch_ts_urls(url, session):
+    r = session.get(url, timeout=30)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     return [
@@ -50,14 +67,14 @@ def fetch_ts_urls(url):
     ]
 
 
-def remote_checksum(url):
+def remote_checksum(url, session):
     """Return a checksum string from the server via HEAD request.
 
     Uses Content-MD5 if present.
     Returns None if absent or if the request fails.
     """
     try:
-        r = requests.head(url, timeout=30)
+        r = session.head(url, timeout=30)
         r.raise_for_status()
     except requests.RequestException:
         return None
@@ -92,18 +109,18 @@ class PositionPool:
             self._free.append(pos)
 
 
-def sync_file(file_url, output_dir, pos_pool):
+def sync_file(file_url, output_dir, pos_pool, session):
     filename = os.path.basename(urlparse(file_url).path)
     filepath = os.path.join(output_dir, filename)
     try:
-        remote = remote_checksum(file_url)
+        remote = remote_checksum(file_url, session)
         if remote and os.path.exists(filepath) and local_checksum(filepath) == remote:
             tqdm.write(f"  {filename} (up to date)")
             return
 
         pos = pos_pool.acquire()
         try:
-            with requests.get(file_url, stream=True, timeout=(10, 60)) as r:
+            with session.get(file_url, stream=True, timeout=(10, 60)) as r:
                 r.raise_for_status()
                 total = int(r.headers.get("Content-Length", 0)) or None
                 with PrideTqdm(total=total, unit="B", unit_scale=True, desc=filename,
@@ -132,14 +149,16 @@ def main():
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
+    session = _make_session()
+
     print(f"Fetching file list from {args.url} ...")
-    ts_urls = fetch_ts_urls(args.url)
+    ts_urls = fetch_ts_urls(args.url, session)
     print(f"Found {len(ts_urls)} .ts file(s)")
 
     pos_pool = PositionPool(args.workers)
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
-            executor.submit(sync_file, url, output_dir, pos_pool): url
+            executor.submit(sync_file, url, output_dir, pos_pool, session): url
             for url in ts_urls
         }
         for future in as_completed(futures):
