@@ -160,8 +160,18 @@ prints the result. Downloaded segments and their `.srt` files land in `./scripts
 ## Configuration
 
 Key variables and their defaults. Override on the command line: `make deploy SEGMENT_TIME=60`.
-`FFMPEG_CFLAGS` is a build-time variable passed via `--build-arg` rather than `envsubst`:
-`make docker-push FFMPEG_CFLAGS="-O3 -march=x86-64-v3"`.
+
+`FFMPEG_CFLAGS` is a build-time variable passed via `--build-arg`. The default (`-O3`) is safe
+on any x86_64 CPU. To add CPU-specific tuning without editing the Makefile, create a gitignored
+`config.local.mk` in the repo root:
+
+```makefile
+# config.local.mk  (not committed)
+FFMPEG_CFLAGS = -O3 -march=skylake
+```
+
+The Makefile includes this file automatically if it exists (via `-include config.local.mk`).
+You can also override on the command line: `make docker-build FFMPEG_CFLAGS="-O3 -march=x86-64-v3"`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Local build config overrides (not committed)
+config.local.mk
+
 # Generated k8s manifests
 k8s/deployment.yaml
 k8s/pvc.yaml

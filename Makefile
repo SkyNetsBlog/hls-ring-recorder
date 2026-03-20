@@ -1,3 +1,5 @@
+-include config.local.mk
+
 export IMAGE_REPO ?= lbrtx01/hls-ring-recorder
 export IMAGE_TAG  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo latest)
 export HLS_STREAM ?= http://192.168.178.96:30900/hls/stream.m3u8
@@ -11,7 +13,7 @@ export LUMA_THRESHOLD      ?= 15
 export WEBHOOK_URL         ?= http://localhost:8081/ring-segments
 export TERMINATION_GRACE   ?= 15
 export PVC_SIZE            ?= 10Gi
-FFMPEG_CFLAGS              ?= -O3 -march=skylake
+FFMPEG_CFLAGS              ?= -O3
 
 LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.30
 LOCAL_PATH_PROVISIONER_URL = https://raw.githubusercontent.com/rancher/local-path-provisioner/$(LOCAL_PATH_PROVISIONER_VERSION)/deploy/local-path-storage.yaml
