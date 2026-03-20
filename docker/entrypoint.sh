@@ -121,13 +121,16 @@ next_segment_number() {
     cat /data/.next_segment 2>/dev/null || echo 0
 }
 
+PROGRESS_FILE=
+LUMA_FILE=
+trap 'kill "$FFMPEG_PID" "$MONITOR_PID" ${NOTIFY_PID:+"$NOTIFY_PID"} "$ATOMIZE_PID" "$HEARTBEAT_PID" 2>/dev/null; rm -f "$PROGRESS_FILE" "$LUMA_FILE"; exit' TERM INT
+
 while true; do
     wait_for_picture
 
     START_NUM=$(next_segment_number)
     PROGRESS_FILE=$(mktemp)
     LUMA_FILE=$(mktemp)
-    trap 'kill "$FFMPEG_PID" "$MONITOR_PID" ${NOTIFY_PID:+"$NOTIFY_PID"} "$ATOMIZE_PID" "$HEARTBEAT_PID" 2>/dev/null; rm -f "$PROGRESS_FILE" "$LUMA_FILE"; exit' TERM INT
     ffmpeg -y -reconnect 1 -reconnect_delay_max 5 -skip_frame nokey -i "$HLS_STREAM" \
         -c copy \
         -f segment \
