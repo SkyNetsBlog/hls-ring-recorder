@@ -7,3 +7,9 @@ dependencies = [
     "beautifulsoup4",
     "tqdm",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "requests-mock",
+]

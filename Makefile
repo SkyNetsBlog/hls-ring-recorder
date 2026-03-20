@@ -19,7 +19,7 @@ LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.30
 LOCAL_PATH_PROVISIONER_URL = https://raw.githubusercontent.com/rancher/local-path-provisioner/$(LOCAL_PATH_PROVISIONER_VERSION)/deploy/local-path-storage.yaml
 LOCAL_PATH_PROVISIONER_MANIFEST = k8s/vendor/local-path-storage.yaml
 
-.PHONY: docker-build docker-push k8s-apply k8s-rollout k8s-uninstall k8s-logs k8s-logs-recorder k8s-logs-nginx k8s-logs-ntfy k8s-setup k8s-vendor k8s-create-pull-secret clean deploy help
+.PHONY: docker-build docker-push k8s-apply k8s-rollout k8s-uninstall k8s-logs k8s-logs-recorder k8s-logs-nginx k8s-logs-ntfy k8s-setup k8s-vendor k8s-create-pull-secret clean deploy test help
 
 docker-build:
 	docker build --platform linux/amd64 --build-arg FFMPEG_CFLAGS="$(FFMPEG_CFLAGS)" -t $(IMAGE_REPO):$(IMAGE_TAG) docker/
@@ -85,6 +85,9 @@ k8s-logs-nginx:
 k8s-logs-ntfy:
 	kubectl logs -l app=hls-ring-recorder --tail=100 -n recorder -c ntfy -f
 
+test:
+	cd scripts/segment-batch-fetcher && uv run --group dev pytest tests/ -v
+
 clean:
 	@rm -f k8s/deployment.yaml
 
@@ -104,4 +107,5 @@ help:
 	@echo "  k8s-create-pull-secret  Create/update the dockerhub image pull secret (requires DOCKER_USER and DOCKER_TOKEN)"
 	@echo "  k8s-uninstall    Delete the recorder namespace and all its resources"
 	@echo "  k8s-vendor       Download the local-path-provisioner manifest"
+	@echo "  test             Run Python unit tests (segment-batch-fetcher)"
 	@echo "  clean            Remove generated k8s/deployment.yaml"

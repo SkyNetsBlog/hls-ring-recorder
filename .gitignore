@@ -18,3 +18,7 @@ scripts/webhook-subscriber-example/.venv/
 scripts/webhook-subscriber-example/segments/
 **/.venv/
 **/tmp/
+
+# Python test/tool caches
+**/.pytest_cache/
+**/__pycache__/
