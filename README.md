@@ -119,41 +119,51 @@ the Makefile). Change this to point at your own camera or HLS source.
 
 ---
 
-## Tester Script (`scripts/webhook-subscriber-example/tester.py`)
+## Scripts
 
-A Python script that subscribes to the ntfy event stream, downloads each new segment from
-nginx via ffmpeg, transcribes it using [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
-and writes a `.srt` subtitle file alongside the downloaded `.ts`.
+Both scripts are managed as uv projects and run via Makefile targets. Set `NGINX_URL` and
+`NTFY_URL` in `config.local.mk` so you don't have to pass them every time:
 
-**Dependencies:**
-
-```bash
-pip install requests faster-whisper
+```makefile
+# config.local.mk  (not committed)
+NGINX_URL = http://<node-ip>:30080
+NTFY_URL  = http://<node-ip>:30081
 ```
 
-(ffmpeg must also be on your `PATH`.)
+### Segment batch fetcher (`script-sync`)
 
-**Usage:**
+Downloads all `.ts` segments currently on the nginx file server to a local directory, skipping
+any files that are already up to date (compared by `Content-MD5`).
 
 ```bash
-python scripts/webhook-subscriber-example/tester.py [ntfy-url] [--nginx-url URL] [--model SIZE] [--output-dir DIR]
+make script-sync                                  # saves to ./segments/
+make script-sync SYNC_OUTPUT_DIR=/data/ring SYNC_WORKERS=4
 ```
 
-| Argument | Default | Description |
+| Variable | Default | Description |
 |----------|---------|-------------|
-| `ntfy_url` | `http://192.168.178.96:30081` | ntfy base URL |
-| `--nginx-url` | `http://192.168.178.96:30080` | nginx base URL for segment downloads |
-| `--model` | `base` | faster-whisper model size (`tiny`, `base`, `small`, `medium`, `large`) |
-| `--output-dir` | `./scripts/segments` | directory to save `.ts` and `.srt` files |
+| `NGINX_URL` | *(required)* | nginx base URL — `http://<node-ip>:30080` |
+| `SYNC_OUTPUT_DIR` | `<project-root>/segments` | directory to save `.ts` files |
+| `SYNC_WORKERS` | `1` | parallel download workers |
 
-**Example:**
+### Webhook subscriber / transcriber (`script-subscribe`)
+
+Subscribes to the ntfy event stream, downloads each new segment from nginx, transcribes it
+using [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and writes a `.srt` subtitle
+file alongside the downloaded `.ts`. ffmpeg must be on your `PATH`.
 
 ```bash
-python scripts/webhook-subscriber-example/tester.py http://<node-ip>:30081 --nginx-url http://<node-ip>:30080 --model small
+make script-subscribe
+make script-subscribe WHISPER_MODEL=small
 ```
 
-As each segment completes, the script downloads it, transcribes it in a background thread, and
-prints the result. Downloaded segments and their `.srt` files land in `./scripts/segments/`.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NTFY_URL` | *(required)* | ntfy base URL — `http://<node-ip>:30081` |
+| `NGINX_URL` | *(required)* | nginx base URL — `http://<node-ip>:30080` |
+| `WHISPER_MODEL` | `base` | faster-whisper model size (`tiny`, `base`, `small`, `medium`, `large`) |
+
+Output lands in `scripts/webhook-subscriber-example/segments/` by default.
 
 ---
 
@@ -173,6 +183,8 @@ FFMPEG_CFLAGS = -O3 -march=skylake
 The Makefile includes this file automatically if it exists (via `-include config.local.mk`).
 You can also override on the command line: `make docker-build FFMPEG_CFLAGS="-O3 -march=x86-64-v3"`.
 
+**Deployment variables** — used by `make deploy` / `make k8s-apply`:
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `IMAGE_REPO` | `lbrtx01/hls-ring-recorder` | Docker Hub repository |
@@ -187,6 +199,16 @@ You can also override on the command line: `make docker-build FFMPEG_CFLAGS="-O3
 | `NODE_SELECTOR_KEY` | `kubernetes.io/hostname` | Node selector label key |
 | `NODE_SELECTOR_VALUE` | `talos-k86-gbo` | Node selector label value |
 | `TERMINATION_GRACE` | `15` | Seconds Kubernetes waits for the pod to exit cleanly before sending SIGKILL |
+
+**Script variables** — used by `make script-sync` / `make script-subscribe`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NGINX_URL` | *(required)* | nginx base URL — `http://<node-ip>:30080` |
+| `NTFY_URL` | *(required)* | ntfy base URL — `http://<node-ip>:30081` |
+| `SYNC_OUTPUT_DIR` | `<project-root>/segments` | output directory for `script-sync` |
+| `SYNC_WORKERS` | `1` | parallel download workers for `script-sync` |
+| `WHISPER_MODEL` | `base` | faster-whisper model for `script-subscribe` |
 
 ---
 
@@ -203,6 +225,9 @@ You can also override on the command line: `make docker-build FFMPEG_CFLAGS="-O3
 | `make docker-build` | Build image locally (no push, for local testing) |
 | `make docker-push` | Build and push multi-arch image to Docker Hub |
 | `make clean` | Remove generated `k8s/deployment.yaml` |
+| `make script-sync` | Download `.ts` segments from nginx to `SYNC_OUTPUT_DIR` |
+| `make script-subscribe` | Subscribe to ntfy and transcribe segments with faster-whisper |
+| `make script-test` | Run unit tests for the segment batch fetcher |
 
 ---
 

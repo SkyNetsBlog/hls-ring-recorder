@@ -11,7 +11,8 @@ k8s/pvc.yaml
 # Temp segment data
 scripts/tmp/
 
-# Tester script output and virtualenvs
+# Script output
+/segments/
 scripts/segments/
 scripts/.venv/
 scripts/webhook-subscriber-example/.venv/

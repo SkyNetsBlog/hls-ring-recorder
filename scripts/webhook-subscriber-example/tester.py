@@ -137,14 +137,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "ntfy_url",
-        nargs="?",
-        default="http://192.168.178.96:30081",
-        help="ntfy base URL (default: http://192.168.178.96:30081)",
+        help="ntfy base URL (e.g. http://<node-ip>:30081 — see HLS_STREAM in the project Makefile for the node IP)",
     )
     parser.add_argument(
         "--nginx-url",
-        default="http://192.168.178.96:30080",
-        help="nginx base URL for segment downloads (default: http://192.168.178.96:30080)",
+        required=True,
+        help="nginx base URL for segment downloads (e.g. http://<node-ip>:30080 — see HLS_STREAM in the project Makefile for the node IP)",
     )
     parser.add_argument(
         "--model",
