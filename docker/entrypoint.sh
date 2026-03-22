@@ -1,17 +1,23 @@
 #!/bin/bash
 POLL_INTERVAL=${POLL_INTERVAL:-15}
-BLANK_TIMEOUT=${BLANK_TIMEOUT:-60}  # stop recording after this many seconds of black screen
-SEGMENT_TIME=${SEGMENT_TIME:-200}   # duration of each segment in seconds
-SEGMENT_WRAP=${SEGMENT_WRAP:-400}   # number of segments in the ring buffer (%03d zero-pads names up to 999; beyond that filenames grow to 4+ digits but still work)
+BLANK_TIMEOUT=${BLANK_TIMEOUT:-60}   # stop recording after this many seconds of black screen
+SEGMENT_TIME=${SEGMENT_TIME:-200}    # duration of each segment in seconds
+SEGMENT_WRAP=${SEGMENT_WRAP:-400}    # number of segments in the ring buffer (%03d zero-pads names up to 999; beyond that filenames grow to 4+ digits but still work)
 LUMA_THRESHOLD=${LUMA_THRESHOLD:-15} # minimum luma (0-255) to consider a frame non-black
 
-[ -n "${HLS_STREAM:-}" ] || { echo "HLS_STREAM is not set"; exit 1; }
+[ -n "${HLS_STREAM:-}" ] || {
+    echo "HLS_STREAM is not set"
+    exit 1
+}
 
 HLS_TMP=/data/.tmp
 mkdir -p "$HLS_TMP"
 
 # Heartbeat for Kubernetes liveness probe
-while true; do date +%s > /tmp/heartbeat; sleep 30; done &
+while true; do
+    date +%s >/tmp/heartbeat
+    sleep 30
+done &
 HEARTBEAT_PID=$!
 
 atomize_segments() {
@@ -22,52 +28,75 @@ atomize_segments() {
         local max_n=-1
         for f in "$HLS_TMP"/*.ts; do
             [ -f "$f" ] || continue
-            local name; name=$(basename "$f")
+            local name
+            name=$(basename "$f")
             mv "$f" "/data/$name"
-            ( set -o pipefail; openssl dgst -md5 -binary "/data/$name" | base64 > "/data/$name.md5.tmp" ) \
-                && mv "/data/$name.md5.tmp" "/data/$name.md5" \
-                || { echo "Warning: MD5 sidecar failed for $name (recovery)" >&2; rm -f "/data/$name.md5.tmp"; }
+            (
+                set -o pipefail
+                openssl dgst -md5 -binary "/data/$name" | base64 >"/data/$name.md5.tmp"
+            ) &&
+                mv "/data/$name.md5.tmp" "/data/$name.md5" ||
+                {
+                    echo "Warning: MD5 sidecar failed for $name (recovery)" >&2
+                    rm -f "/data/$name.md5.tmp"
+                }
             echo "Recovered partial segment from previous run: $name"
-            local n=${name#segment_}; n=${n%.ts}
-            [ $(( 10#$n )) -gt "$max_n" ] && max_n=$(( 10#$n ))
+            local n=${name#segment_}
+            n=${n%.ts}
+            [ $((10#$n)) -gt "$max_n" ] && max_n=$((10#$n))
         done
-        [ "$max_n" -ge 0 ] && echo $(( (max_n + 1) % SEGMENT_WRAP )) > /data/.next_segment
+        [ "$max_n" -ge 0 ] && echo $(((max_n + 1) % SEGMENT_WRAP)) >/data/.next_segment
     fi
 
-    inotifywait -m -e close_write --format '%f' "$HLS_TMP" 2>/dev/null \
-    | while read -r filename; do
-        [[ "$filename" == *.ts ]] || continue
-        mv "$HLS_TMP/$filename" "/data/$filename"
-        ( set -o pipefail; openssl dgst -md5 -binary "/data/$filename" | base64 > "/data/$filename.md5.tmp" ) \
-            && mv "/data/$filename.md5.tmp" "/data/$filename.md5" \
-            || { echo "Warning: MD5 sidecar failed for $filename" >&2; rm -f "/data/$filename.md5.tmp"; }
-        local n=${filename#segment_}; n=${n%.ts}
-        echo $(( (10#$n + 1) % SEGMENT_WRAP )) > /data/.next_segment
-    done
+    inotifywait -m -e close_write --format '%f' "$HLS_TMP" 2>/dev/null |
+        while read -r filename; do
+            [[ "$filename" == *.ts ]] || continue
+            mv "$HLS_TMP/$filename" "/data/$filename"
+            (
+                set -o pipefail
+                openssl dgst -md5 -binary "/data/$filename" | base64 >"/data/$filename.md5.tmp"
+            ) &&
+                mv "/data/$filename.md5.tmp" "/data/$filename.md5" ||
+                {
+                    echo "Warning: MD5 sidecar failed for $filename" >&2
+                    rm -f "/data/$filename.md5.tmp"
+                }
+            local n=${filename#segment_}
+            n=${n%.ts}
+            echo $(((10#$n + 1) % SEGMENT_WRAP)) >/data/.next_segment
+        done
 }
-while true; do atomize_segments; echo "atomize_segments exited unexpectedly, restarting..."; sleep 1; done &
+while true; do
+    atomize_segments
+    echo "atomize_segments exited unexpectedly, restarting..."
+    sleep 1
+done &
 ATOMIZE_PID=$!
 
 notify_on_segment() {
     [ -z "${WEBHOOK_URL:-}" ] && return
     echo "Webhook notifications enabled -> $WEBHOOK_URL"
-    inotifywait -m -e moved_to --format '%f' /data 2>/dev/null \
-    | while read -r filename; do
-        [[ "$filename" == *.ts ]] || continue
-        (
-            payload=$(jq -n --arg segment "$filename" --arg path "/data/$filename" \
-                '{"segment":$segment,"path":$path}')
-            status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST "$WEBHOOK_URL" \
-                -H "Content-Type: application/json" \
-                -d "$payload")
-            [[ "$status" == 2* ]] || echo "Webhook POST failed for $filename: HTTP $status"
-        ) &
-    done
+    inotifywait -m -e moved_to --format '%f' /data 2>/dev/null |
+        while read -r filename; do
+            [[ "$filename" == *.ts ]] || continue
+            (
+                payload=$(jq -n --arg segment "$filename" --arg path "/data/$filename" \
+                    '{"segment":$segment,"path":$path}')
+                status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST "$WEBHOOK_URL" \
+                    -H "Content-Type: application/json" \
+                    -d "$payload")
+                [[ "$status" == 2* ]] || echo "Webhook POST failed for $filename: HTTP $status"
+            ) &
+        done
 }
 
 NOTIFY_PID=
 if [ -n "${WEBHOOK_URL:-}" ]; then
-    while true; do notify_on_segment; echo "notify_on_segment exited unexpectedly, restarting..."; sleep 1; done &
+    while true; do
+        notify_on_segment
+        echo "notify_on_segment exited unexpectedly, restarting..."
+        sleep 1
+    done &
     NOTIFY_PID=$!
 fi
 
@@ -77,8 +106,8 @@ stream_is_nonblack() {
     local luma
     luma=$(ffmpeg -loglevel error -timeout 10000000 -i "$HLS_STREAM" \
         -frames:v 1 -vf "scale=1:1,format=gray" \
-        -f rawvideo - 2>/dev/null \
-        | od -An -tu1 | awk 'NR==1{print $1+0}')
+        -f rawvideo - 2>/dev/null |
+        od -An -tu1 | awk 'NR==1{print $1+0}')
     [ "${luma:-0}" -gt "$LUMA_THRESHOLD" ]
 }
 
@@ -87,8 +116,8 @@ wait_for_picture() {
     local poll=0
     until stream_is_nonblack; do
         sleep "$POLL_INTERVAL"
-        poll=$(( poll + 1 ))
-        echo "  Still waiting... (${poll} poll(s), $(( poll * POLL_INTERVAL ))s elapsed)"
+        poll=$((poll + 1))
+        echo "  Still waiting... (${poll} poll(s), $((poll * POLL_INTERVAL))s elapsed)"
     done
     echo "Picture detected, starting recording."
 }
@@ -108,7 +137,7 @@ monitor_for_blank() {
                 blank_since=$(date +%s)
                 echo "monitor_for_blank: black screen detected, blank timer started."
             else
-                local elapsed=$(( $(date +%s) - blank_since ))
+                local elapsed=$(($(date +%s) - blank_since))
                 echo "monitor_for_blank: stream black for ${elapsed}s / ${BLANK_TIMEOUT}s."
                 if [ "$elapsed" -ge "$BLANK_TIMEOUT" ]; then
                     echo "monitor_for_blank: blank timeout reached, stopping recording."

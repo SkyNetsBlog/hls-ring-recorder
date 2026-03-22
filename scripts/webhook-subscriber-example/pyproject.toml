@@ -6,3 +6,11 @@ dependencies = [
     "faster-whisper",
     "requests",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100

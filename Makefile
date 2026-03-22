@@ -25,7 +25,7 @@ LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.30
 LOCAL_PATH_PROVISIONER_URL = https://raw.githubusercontent.com/rancher/local-path-provisioner/$(LOCAL_PATH_PROVISIONER_VERSION)/deploy/local-path-storage.yaml
 LOCAL_PATH_PROVISIONER_MANIFEST = k8s/vendor/local-path-storage.yaml
 
-.PHONY: docker-build docker-push k8s-apply k8s-rollout k8s-uninstall k8s-logs k8s-logs-recorder k8s-logs-nginx k8s-logs-ntfy k8s-setup k8s-vendor k8s-create-pull-secret clean deploy script-test script-sync script-subscribe help
+.PHONY: docker-build docker-push k8s-apply k8s-rollout k8s-uninstall k8s-logs k8s-logs-recorder k8s-logs-nginx k8s-logs-ntfy k8s-setup k8s-vendor k8s-create-pull-secret clean deploy script-test script-sync script-subscribe format help
 
 docker-build:
 	docker build --platform linux/amd64 --build-arg FFMPEG_CFLAGS="$(FFMPEG_CFLAGS)" -t $(IMAGE_REPO):$(IMAGE_TAG) docker/
@@ -100,6 +100,14 @@ script-sync:
 script-subscribe:
 	cd scripts/webhook-subscriber-example && uv run tester.py $(NTFY_URL) --nginx-url $(NGINX_URL) --model $(WHISPER_MODEL)
 
+format:
+	cd scripts/segment-batch-fetcher      && uv run --group dev ruff format .
+	cd scripts/webhook-subscriber-example && uv run --group dev ruff format .
+	shfmt -w -i 4 docker/entrypoint.sh
+	yamlfmt k8s/deployment.tmpl.yaml k8s/pvc.tmpl.yaml \
+	        k8s/service.yaml k8s/namespace.yaml k8s/nginx-config.yaml
+	prettier --write "**/*.md" --ignore-path .gitignore
+
 clean:
 	@rm -f k8s/deployment.yaml
 
@@ -122,4 +130,5 @@ help:
 	@echo "  script-test      Run Python unit tests (segment-batch-fetcher)"
 	@echo "  script-sync      Download .ts segments  (requires NGINX_URL; optional SYNC_OUTPUT_DIR, SYNC_WORKERS)"
 	@echo "  script-subscribe Subscribe to ntfy and transcribe segments  (requires NGINX_URL, NTFY_URL; optional WHISPER_MODEL)"
+	@echo "  format           Auto-format Python (ruff), shell (shfmt), YAML (yamlfmt), Markdown (prettier)"
 	@echo "  clean            Remove generated k8s/deployment.yaml"

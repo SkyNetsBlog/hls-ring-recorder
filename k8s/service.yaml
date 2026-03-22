@@ -8,11 +8,11 @@ spec:
   selector:
     app: hls-ring-recorder
   ports:
-  - name: nginx
-    port: 8080
-    targetPort: 8080
-    nodePort: 30080
-  - name: ntfy
-    port: 80
-    targetPort: 8081
-    nodePort: 30081
+    - name: nginx
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080
+    - name: ntfy
+      port: 80
+      targetPort: 8081
+      nodePort: 30081

@@ -45,7 +45,7 @@ def _make_session():
     session = requests.Session()
     retry = Retry(
         total=4,
-        backoff_factor=1,       # waits 1s, 2s, 4s between attempts
+        backoff_factor=1,  # waits 1s, 2s, 4s between attempts
         status_forcelist=[502, 503, 504],
         allowed_methods={"HEAD", "GET"},
         raise_on_status=False,
@@ -61,9 +61,7 @@ def fetch_ts_urls(url, session):
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     return [
-        urljoin(url, a["href"])
-        for a in soup.find_all("a", href=True)
-        if a["href"].endswith(".ts")
+        urljoin(url, a["href"]) for a in soup.find_all("a", href=True) if a["href"].endswith(".ts")
     ]
 
 
@@ -123,9 +121,15 @@ def sync_file(file_url, output_dir, pos_pool, session):
             with session.get(file_url, stream=True, timeout=(10, 60)) as r:
                 r.raise_for_status()
                 total = int(r.headers.get("Content-Length", 0)) or None
-                with PrideTqdm(total=total, unit="B", unit_scale=True, desc=filename,
-                          bar_format="{l_bar}{bar}| {n_fmt:>7}/{total_fmt:<7} [{elapsed:>5}<{remaining:<5}, {rate_fmt:>10}]",
-                          position=pos, leave=True) as bar:
+                with PrideTqdm(
+                    total=total,
+                    unit="B",
+                    unit_scale=True,
+                    desc=filename,
+                    bar_format="{l_bar}{bar}| {n_fmt:>7}/{total_fmt:<7} [{elapsed:>5}<{remaining:<5}, {rate_fmt:>10}]",
+                    position=pos,
+                    leave=True,
+                ) as bar:
                     with open(filepath, "wb") as f:
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
@@ -141,9 +145,12 @@ def main():
         description="Sync .ts segments from the nginx file server to a local directory."
     )
     parser.add_argument("url", help="base URL of the nginx segment listing")
-    parser.add_argument("output_dir", metavar="output-dir", help="local directory to sync segments into")
-    parser.add_argument("--workers", type=int, default=1, metavar="N",
-                        help="parallel download workers (default: 1)")
+    parser.add_argument(
+        "output_dir", metavar="output-dir", help="local directory to sync segments into"
+    )
+    parser.add_argument(
+        "--workers", type=int, default=1, metavar="N", help="parallel download workers (default: 1)"
+    )
     args = parser.parse_args()
 
     output_dir = args.output_dir
@@ -158,8 +165,7 @@ def main():
     pos_pool = PositionPool(args.workers)
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
-            executor.submit(sync_file, url, output_dir, pos_pool, session): url
-            for url in ts_urls
+            executor.submit(sync_file, url, output_dir, pos_pool, session): url for url in ts_urls
         }
         for future in as_completed(futures):
             exc = future.exception()

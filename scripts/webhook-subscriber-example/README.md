@@ -25,13 +25,13 @@ uv sync
 uv run tester.py [ntfy-url] [--nginx-url URL] [--model SIZE] [--output-dir DIR]
 ```
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `ntfy_url` | `http://192.168.178.96:30081` | ntfy base URL |
-| `--nginx-url` | `http://192.168.178.96:30080` | nginx base URL for segment downloads |
-| `--model` | `base` | Whisper model size: `tiny`, `base`, `small`, `medium`, `large` |
-| `--device` | `auto` | CTranslate2 device: `cpu`, `cuda`, `auto` |
-| `--output-dir` | `./scripts/segments` | Directory to save `.ts` and `.srt` files |
+| Argument       | Default                       | Description                                                    |
+| -------------- | ----------------------------- | -------------------------------------------------------------- |
+| `ntfy_url`     | `http://192.168.178.96:30081` | ntfy base URL                                                  |
+| `--nginx-url`  | `http://192.168.178.96:30080` | nginx base URL for segment downloads                           |
+| `--model`      | `base`                        | Whisper model size: `tiny`, `base`, `small`, `medium`, `large` |
+| `--device`     | `auto`                        | CTranslate2 device: `cpu`, `cuda`, `auto`                      |
+| `--output-dir` | `./scripts/segments`          | Directory to save `.ts` and `.srt` files                       |
 
 **Example:**
 

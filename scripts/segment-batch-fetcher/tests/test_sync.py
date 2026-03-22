@@ -27,6 +27,7 @@ BASE_URL = "http://example.com/segments/"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _md5_b64(data: bytes) -> str:
     return base64.b64encode(hashlib.md5(data).digest()).decode()
 
@@ -43,12 +44,9 @@ def _md5_header(data: bytes) -> dict:
 # fetch_ts_urls
 # ---------------------------------------------------------------------------
 
+
 def test_fetch_ts_urls_filters_ts_only(requests_mock):
-    html = (
-        '<a href="seg001.ts">seg</a>'
-        '<a href="index.m3u8">m3u8</a>'
-        '<a href="page.html">html</a>'
-    )
+    html = '<a href="seg001.ts">seg</a><a href="index.m3u8">m3u8</a><a href="page.html">html</a>'
     requests_mock.get(BASE_URL, text=html)
     result = fetch_ts_urls(BASE_URL, requests.Session())
     assert result == [BASE_URL + "seg001.ts"]
@@ -75,6 +73,7 @@ def test_fetch_ts_urls_http_error_raises(requests_mock):
 # ---------------------------------------------------------------------------
 # remote_checksum
 # ---------------------------------------------------------------------------
+
 
 def test_remote_checksum_header_present(requests_mock):
     data = b"hello world"
@@ -105,6 +104,7 @@ def test_remote_checksum_502_returns_none(requests_mock):
 # local_checksum
 # ---------------------------------------------------------------------------
 
+
 def test_local_checksum_known_content(tmp_path):
     data = b"test content"
     f = tmp_path / "test.ts"
@@ -121,6 +121,7 @@ def test_local_checksum_empty_file(tmp_path):
 # ---------------------------------------------------------------------------
 # PositionPool
 # ---------------------------------------------------------------------------
+
 
 def test_position_pool_acquire_all_values():
     pool = PositionPool(3)
@@ -176,6 +177,7 @@ def test_position_pool_thread_safety():
 # ---------------------------------------------------------------------------
 # sync_file
 # ---------------------------------------------------------------------------
+
 
 def _mock_pride_tqdm(mock):
     """Wire up a PrideTqdm mock to act as a well-behaved context manager."""
@@ -253,6 +255,7 @@ def test_sync_file_get_error_does_not_raise(mock_pt, requests_mock, tmp_path):
 # ---------------------------------------------------------------------------
 # _make_session
 # ---------------------------------------------------------------------------
+
 
 def test_make_session_returns_requests_session():
     assert isinstance(_make_session(), requests.Session)
