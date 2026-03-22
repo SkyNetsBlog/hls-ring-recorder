@@ -94,27 +94,24 @@ wait_for_picture() {
 }
 
 monitor_for_blank() {
-    local ffmpeg_pid=$1 luma_file=$2 blank_since=0
+    local ffmpeg_pid=$1 blank_since=0
+    echo "monitor_for_blank: started (ffmpeg PID $ffmpeg_pid, poll every ${POLL_INTERVAL}s, timeout ${BLANK_TIMEOUT}s)"
     while kill -0 "$ffmpeg_pid" 2>/dev/null; do
         sleep "$POLL_INTERVAL"
-        local luma
-        luma=$(tail -c 1 "$luma_file" 2>/dev/null | od -An -tu1 | awk 'NR==1{print $1+0}')
-        # Default to non-black until first keyframe is written
-        if [ "${luma:-$((LUMA_THRESHOLD + 1))}" -gt "$LUMA_THRESHOLD" ]; then
+        if stream_is_nonblack; then
             if [ "$blank_since" -ne 0 ]; then
-                echo "Content resumed."
+                echo "monitor_for_blank: content resumed."
                 blank_since=0
             fi
         else
             if [ "$blank_since" -eq 0 ]; then
                 blank_since=$(date +%s)
-                echo "Black screen detected, blank timer started."
+                echo "monitor_for_blank: black screen detected, blank timer started."
             else
-                local elapsed
-                elapsed=$(( $(date +%s) - blank_since ))
-                echo "Stream black for ${elapsed}s / ${BLANK_TIMEOUT}s."
+                local elapsed=$(( $(date +%s) - blank_since ))
+                echo "monitor_for_blank: stream black for ${elapsed}s / ${BLANK_TIMEOUT}s."
                 if [ "$elapsed" -ge "$BLANK_TIMEOUT" ]; then
-                    echo "Blank timeout reached, stopping recording."
+                    echo "monitor_for_blank: blank timeout reached, stopping recording."
                     kill "$ffmpeg_pid"
                     return
                 fi
@@ -128,16 +125,14 @@ next_segment_number() {
 }
 
 PROGRESS_FILE=
-LUMA_FILE=
-trap 'kill "$FFMPEG_PID" "$MONITOR_PID" ${NOTIFY_PID:+"$NOTIFY_PID"} "$ATOMIZE_PID" "$HEARTBEAT_PID" 2>/dev/null; rm -f "$PROGRESS_FILE" "$LUMA_FILE"; exit' TERM INT
+trap 'kill "$FFMPEG_PID" "$MONITOR_PID" ${NOTIFY_PID:+"$NOTIFY_PID"} "$ATOMIZE_PID" "$HEARTBEAT_PID" 2>/dev/null; rm -f "$PROGRESS_FILE"; exit' TERM INT
 
 while true; do
     wait_for_picture
 
     START_NUM=$(next_segment_number)
     PROGRESS_FILE=$(mktemp)
-    LUMA_FILE=$(mktemp)
-    ffmpeg -y -reconnect 1 -reconnect_delay_max 5 -skip_frame nokey -i "$HLS_STREAM" \
+    ffmpeg -y -reconnect 1 -reconnect_delay_max 5 -i "$HLS_STREAM" \
         -c copy \
         -f segment \
         -segment_time "$SEGMENT_TIME" \
@@ -146,25 +141,22 @@ while true; do
         -segment_format mpegts \
         -progress "$PROGRESS_FILE" \
         -nostats \
-        "$HLS_TMP/segment_%03d.ts" \
-        -map 0:v:0 \
-        -vf "scale=1:1,format=gray" -pix_fmt gray -an \
-        -f rawvideo "$LUMA_FILE" &
+        "$HLS_TMP/segment_%03d.ts" &
     FFMPEG_PID=$!
 
-    monitor_for_blank "$FFMPEG_PID" "$LUMA_FILE" &
+    monitor_for_blank "$FFMPEG_PID" &
     MONITOR_PID=$!
 
     while kill -0 "$FFMPEG_PID" 2>/dev/null; do
         t=$(tail -n 20 "$PROGRESS_FILE" 2>/dev/null | grep "^out_time=" | tail -1 | cut -d= -f2)
         s=$(tail -n 20 "$PROGRESS_FILE" 2>/dev/null | grep "^total_size=" | tail -1 | cut -d= -f2)
-        printf "\r  Recording: %s  %.1f MB  " "${t:--}" "$(awk "BEGIN{printf \"%.1f\", ${s:-0}/1048576}")"
+        printf "  Recording: %s  %.1f MB\n" "${t:--}" "$(awk "BEGIN{printf \"%.1f\", ${s:-0}/1048576}")"
         sleep 5
     done
 
     kill "$MONITOR_PID" 2>/dev/null
     wait "$MONITOR_PID" "$FFMPEG_PID" 2>/dev/null
-    rm -f "$PROGRESS_FILE" "$LUMA_FILE"
+    rm -f "$PROGRESS_FILE"
 
     echo
     echo "Stream ended or blank. Polling..."
