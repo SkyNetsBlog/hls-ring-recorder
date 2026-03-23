@@ -2,8 +2,7 @@ import base64
 import hashlib
 import os
 import sys
-import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import requests
@@ -12,7 +11,7 @@ from requests.adapters import HTTPAdapter
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from sync import (
-    PositionPool,
+    Manifest,
     _make_session,
     fetch_ts_urls,
     local_checksum,
@@ -119,59 +118,34 @@ def test_local_checksum_empty_file(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# PositionPool
+# Manifest
 # ---------------------------------------------------------------------------
 
 
-def test_position_pool_acquire_all_values():
-    pool = PositionPool(3)
-    acquired = {pool.acquire() for _ in range(3)}
-    assert acquired == {0, 1, 2}
+def test_manifest_missing_file_starts_empty(tmp_path):
+    m = Manifest(str(tmp_path))
+    assert m.get("seg001.ts") is None
 
 
-def test_position_pool_release_restores_value():
-    pool = PositionPool(3)
-    pos = pool.acquire()
-    pool.release(pos)
-    assert pool.acquire() == pos
+def test_manifest_loads_existing(tmp_path):
+    import json
+    manifest_path = tmp_path / ".sync-manifest.json"
+    manifest_path.write_text(json.dumps({"seg001.ts": "abc123"}))
+    m = Manifest(str(tmp_path))
+    assert m.get("seg001.ts") == "abc123"
 
 
-def test_position_pool_lifo_order():
-    pool = PositionPool(3)
-    # drain the pool
-    pool.acquire()
-    pool.acquire()
-    pool.acquire()
-    pool.release(1)
-    pool.release(0)
-    # LIFO: last released (0) is returned first
-    assert pool.acquire() == 0
+def test_manifest_set_persists(tmp_path):
+    m = Manifest(str(tmp_path))
+    m.set("seg001.ts", "deadbeef")
+    m2 = Manifest(str(tmp_path))
+    assert m2.get("seg001.ts") == "deadbeef"
 
 
-def test_position_pool_thread_safety():
-    pool = PositionPool(10)
-    in_use = set()
-    lock = threading.Lock()
-    errors = []
-
-    def worker():
-        pos = pool.acquire()
-        with lock:
-            if pos in in_use:
-                errors.append(f"duplicate position: {pos}")
-            in_use.add(pos)
-        # simulate a small amount of work while holding the position
-        with lock:
-            in_use.discard(pos)
-        pool.release(pos)
-
-    threads = [threading.Thread(target=worker) for _ in range(10)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    assert errors == []
+def test_manifest_corrupted_json_starts_empty(tmp_path):
+    (tmp_path / ".sync-manifest.json").write_text("not valid json{{")
+    m = Manifest(str(tmp_path))
+    assert m.get("seg001.ts") is None
 
 
 # ---------------------------------------------------------------------------
@@ -179,77 +153,67 @@ def test_position_pool_thread_safety():
 # ---------------------------------------------------------------------------
 
 
-def _mock_pride_tqdm(mock):
-    """Wire up a PrideTqdm mock to act as a well-behaved context manager."""
-    bar = MagicMock()
-    mock.return_value.__enter__ = MagicMock(return_value=bar)
-    mock.return_value.__exit__ = MagicMock(return_value=False)
-
-
-@patch("sync.PrideTqdm")
-def test_sync_file_absent_downloads(mock_pt, requests_mock, tmp_path):
-    _mock_pride_tqdm(mock_pt)
+def test_sync_file_absent_downloads(requests_mock, tmp_path):
     data = b"segment data"
     url = BASE_URL + "seg001.ts"
     requests_mock.head(url, headers=_md5_header(data))
     requests_mock.get(url, content=data)
+    manifest = Manifest(str(tmp_path))
 
-    sync_file(url, str(tmp_path), PositionPool(1), requests.Session())
+    sync_file(url, str(tmp_path), requests.Session(), manifest)
 
     assert (tmp_path / "seg001.ts").read_bytes() == data
+    assert manifest.get("seg001.ts") == _md5_hex(data)
 
 
-@patch("sync.PrideTqdm")
-def test_sync_file_up_to_date_skips_get(mock_pt, requests_mock, tmp_path):
-    _mock_pride_tqdm(mock_pt)
+def test_sync_file_up_to_date_skips_get(requests_mock, tmp_path):
     data = b"existing segment"
     url = BASE_URL + "seg002.ts"
     (tmp_path / "seg002.ts").write_bytes(data)
     requests_mock.head(url, headers=_md5_header(data))
+    manifest = Manifest(str(tmp_path))
+    manifest.set("seg002.ts", _md5_hex(data))
 
-    sync_file(url, str(tmp_path), PositionPool(1), requests.Session())
+    sync_file(url, str(tmp_path), requests.Session(), manifest)
 
     # Only the HEAD request should have been issued
     assert requests_mock.call_count == 1
 
 
-@patch("sync.PrideTqdm")
-def test_sync_file_checksum_mismatch_redownloads(mock_pt, requests_mock, tmp_path):
-    _mock_pride_tqdm(mock_pt)
+def test_sync_file_checksum_mismatch_redownloads(requests_mock, tmp_path):
     old_data = b"old content"
     new_data = b"new content"
     url = BASE_URL + "seg003.ts"
     (tmp_path / "seg003.ts").write_bytes(old_data)
     requests_mock.head(url, headers=_md5_header(new_data))
     requests_mock.get(url, content=new_data)
+    manifest = Manifest(str(tmp_path))
 
-    sync_file(url, str(tmp_path), PositionPool(1), requests.Session())
+    sync_file(url, str(tmp_path), requests.Session(), manifest)
 
     assert (tmp_path / "seg003.ts").read_bytes() == new_data
 
 
-@patch("sync.PrideTqdm")
-def test_sync_file_no_remote_checksum_downloads(mock_pt, requests_mock, tmp_path):
-    _mock_pride_tqdm(mock_pt)
+def test_sync_file_no_remote_checksum_downloads(requests_mock, tmp_path):
     data = b"segment without checksum"
     url = BASE_URL + "seg004.ts"
     requests_mock.head(url, status_code=200)  # no Content-MD5
     requests_mock.get(url, content=data)
+    manifest = Manifest(str(tmp_path))
 
-    sync_file(url, str(tmp_path), PositionPool(1), requests.Session())
+    sync_file(url, str(tmp_path), requests.Session(), manifest)
 
     assert (tmp_path / "seg004.ts").read_bytes() == data
 
 
-@patch("sync.PrideTqdm")
-def test_sync_file_get_error_does_not_raise(mock_pt, requests_mock, tmp_path):
-    _mock_pride_tqdm(mock_pt)
+def test_sync_file_get_error_does_not_raise(requests_mock, tmp_path):
     url = BASE_URL + "seg005.ts"
     requests_mock.head(url, status_code=200)  # no checksum → triggers download
     requests_mock.get(url, status_code=500)
+    manifest = Manifest(str(tmp_path))
 
     # Must not raise; error is swallowed and logged via tqdm.write
-    sync_file(url, str(tmp_path), PositionPool(1), requests.Session())
+    sync_file(url, str(tmp_path), requests.Session(), manifest)
 
 
 # ---------------------------------------------------------------------------
