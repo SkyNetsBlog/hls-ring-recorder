@@ -213,13 +213,24 @@ You can also override on the command line: `make docker-build FFMPEG_CFLAGS="-O3
 
 ---
 
-## Formatting
+## Formatting & Linting
 
-`make format` runs four formatters across the repo. The Python formatter (ruff) is installed
-automatically via uv. The other three are system tools that need to be installed once:
+`make format` runs four formatters across the repo. `make lint` runs ruff and shellcheck.
+The Python tools (ruff) are installed automatically via uv. The other system tools need to be
+installed once:
+
+**macOS**
 
 ```bash
-brew install shfmt yamlfmt prettier
+brew install shfmt yamlfmt prettier shellcheck
+```
+
+**Linux** (Debian/Ubuntu)
+
+```bash
+sudo apt install shfmt shellcheck
+npm install -g prettier
+go install github.com/google/yamlfmt/cmd/yamlfmt@latest
 ```
 
 | Formatter     | Scope                                                                          |
@@ -233,21 +244,22 @@ brew install shfmt yamlfmt prettier
 
 ## Makefile Reference
 
-| Target                  | Description                                                                                                       |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `make deploy`           | Build + push image, apply manifests, force rollout                                                                |
-| `make k8s-apply`        | Generate `k8s/deployment.yaml` and apply all manifests                                                            |
-| `make k8s-setup`        | Install local-path-provisioner storage class (first-time only)                                                    |
-| `make k8s-rollout`      | Restart the deployment and wait for rollout                                                                       |
-| `make k8s-logs`         | Tail logs from all pod containers                                                                                 |
-| `make k8s-uninstall`    | Delete the `recorder` namespace and everything in it                                                              |
-| `make docker-build`     | Build image locally (no push, for local testing)                                                                  |
-| `make docker-push`      | Build and push multi-arch image to Docker Hub                                                                     |
-| `make format`           | Auto-format Python (ruff), shell (shfmt), YAML (yamlfmt), and Markdown (prettier) — see [Formatting](#formatting) |
-| `make clean`            | Remove generated `k8s/deployment.yaml`                                                                            |
-| `make script-sync`      | Download `.ts` segments from nginx to `SYNC_OUTPUT_DIR`                                                           |
-| `make script-subscribe` | Subscribe to ntfy and transcribe segments with faster-whisper                                                     |
-| `make script-test`      | Run unit tests for the segment batch fetcher                                                                      |
+| Target                  | Description                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `make deploy`           | Build + push image, apply manifests, force rollout                                                                                   |
+| `make k8s-apply`        | Generate `k8s/deployment.yaml` and apply all manifests                                                                               |
+| `make k8s-setup`        | Install local-path-provisioner storage class (first-time only)                                                                       |
+| `make k8s-rollout`      | Restart the deployment and wait for rollout                                                                                          |
+| `make k8s-logs`         | Tail logs from all pod containers                                                                                                    |
+| `make k8s-uninstall`    | Delete the `recorder` namespace and everything in it                                                                                 |
+| `make docker-build`     | Build image locally (no push, for local testing)                                                                                     |
+| `make docker-push`      | Build and push multi-arch image to Docker Hub                                                                                        |
+| `make format`           | Auto-format Python (ruff), shell (shfmt), YAML (yamlfmt), and Markdown (prettier) — see [Formatting & Linting](#formatting--linting) |
+| `make lint`             | Lint Python (ruff check) and shell (shellcheck)                                                                                      |
+| `make clean`            | Remove generated `k8s/deployment.yaml`                                                                                               |
+| `make script-sync`      | Download `.ts` segments from nginx to `SYNC_OUTPUT_DIR`                                                                              |
+| `make script-subscribe` | Subscribe to ntfy and transcribe segments with faster-whisper                                                                        |
+| `make script-test`      | Run unit tests for the segment batch fetcher                                                                                         |
 
 ---
 

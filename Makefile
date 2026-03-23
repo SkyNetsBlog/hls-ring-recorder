@@ -25,7 +25,7 @@ LOCAL_PATH_PROVISIONER_VERSION ?= v0.0.30
 LOCAL_PATH_PROVISIONER_URL = https://raw.githubusercontent.com/rancher/local-path-provisioner/$(LOCAL_PATH_PROVISIONER_VERSION)/deploy/local-path-storage.yaml
 LOCAL_PATH_PROVISIONER_MANIFEST = k8s/vendor/local-path-storage.yaml
 
-.PHONY: docker-build docker-push k8s-apply k8s-rollout k8s-uninstall k8s-logs k8s-logs-recorder k8s-logs-nginx k8s-logs-ntfy k8s-setup k8s-vendor k8s-create-pull-secret clean deploy script-test script-sync script-subscribe format help
+.PHONY: docker-build docker-push k8s-apply k8s-rollout k8s-uninstall k8s-logs k8s-logs-recorder k8s-logs-nginx k8s-logs-ntfy k8s-setup k8s-vendor k8s-create-pull-secret clean deploy script-test script-sync script-subscribe format lint help
 
 docker-build:
 	docker build --platform linux/amd64 --build-arg FFMPEG_CFLAGS="$(FFMPEG_CFLAGS)" -t $(IMAGE_REPO):$(IMAGE_TAG) docker/
@@ -108,6 +108,11 @@ format:
 	        k8s/service.yaml k8s/namespace.yaml k8s/nginx-config.yaml
 	prettier --write "**/*.md" --ignore-path .gitignore
 
+lint:
+	cd scripts/segment-batch-fetcher      && uv run --group dev ruff check .
+	cd scripts/webhook-subscriber-example && uv run --group dev ruff check .
+	shellcheck docker/entrypoint.sh
+
 clean:
 	@rm -f k8s/deployment.yaml
 
@@ -131,4 +136,5 @@ help:
 	@echo "  script-sync      Download .ts segments  (requires NGINX_URL; optional SYNC_OUTPUT_DIR, SYNC_WORKERS)"
 	@echo "  script-subscribe Subscribe to ntfy and transcribe segments  (requires NGINX_URL, NTFY_URL; optional WHISPER_MODEL)"
 	@echo "  format           Auto-format Python (ruff), shell (shfmt), YAML (yamlfmt), Markdown (prettier)"
+	@echo "  lint             Lint Python (ruff check) and shell (shellcheck)"
 	@echo "  clean            Remove generated k8s/deployment.yaml"

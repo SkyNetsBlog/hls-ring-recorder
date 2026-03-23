@@ -31,15 +31,15 @@ atomize_segments() {
             local name
             name=$(basename "$f")
             mv "$f" "/data/$name"
-            (
+            if (
                 set -o pipefail
                 openssl dgst -md5 -binary "/data/$name" | base64 >"/data/$name.md5.tmp"
-            ) &&
-                mv "/data/$name.md5.tmp" "/data/$name.md5" ||
-                {
-                    echo "Warning: MD5 sidecar failed for $name (recovery)" >&2
-                    rm -f "/data/$name.md5.tmp"
-                }
+            ) && mv "/data/$name.md5.tmp" "/data/$name.md5"; then
+                :
+            else
+                echo "Warning: MD5 sidecar failed for $name (recovery)" >&2
+                rm -f "/data/$name.md5.tmp"
+            fi
             echo "Recovered partial segment from previous run: $name"
             local n=${name#segment_}
             n=${n%.ts}
@@ -52,15 +52,15 @@ atomize_segments() {
         while read -r filename; do
             [[ "$filename" == *.ts ]] || continue
             mv "$HLS_TMP/$filename" "/data/$filename"
-            (
+            if (
                 set -o pipefail
                 openssl dgst -md5 -binary "/data/$filename" | base64 >"/data/$filename.md5.tmp"
-            ) &&
-                mv "/data/$filename.md5.tmp" "/data/$filename.md5" ||
-                {
-                    echo "Warning: MD5 sidecar failed for $filename" >&2
-                    rm -f "/data/$filename.md5.tmp"
-                }
+            ) && mv "/data/$filename.md5.tmp" "/data/$filename.md5"; then
+                :
+            else
+                echo "Warning: MD5 sidecar failed for $filename" >&2
+                rm -f "/data/$filename.md5.tmp"
+            fi
             local n=${filename#segment_}
             n=${n%.ts}
             echo $(((10#$n + 1) % SEGMENT_WRAP)) >/data/.next_segment
