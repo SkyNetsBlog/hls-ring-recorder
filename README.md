@@ -1,8 +1,19 @@
 # HLS Ring Recorder
 
-A Kubernetes pod that records an HLS stream into a circular buffer — capturing a fixed number of
-segments and overwriting the oldest ones when the buffer is full. Think of it as a perpetual
-dashcam for any HLS source.
+Always-on ring-buffer recorder for HLS streams — captures continuously, overwrites the oldest
+segments automatically, and stops wasting disk on black screens. Point it at a camera, set a
+buffer size, and forget it.
+
+## Features
+
+- **Ring buffer** — fixed segment count, oldest segment overwritten automatically; disk use is bounded forever
+- **Black screen detection** — samples a single frame every poll interval; skips recording entirely when the stream is dark, resumes the moment content appears. No black `.ts` files, no wasted storage.
+- **Atomic segment delivery** — segments land in `/data` only when fully written; nginx never serves a partial file
+- **Content-MD5 on every segment** — sidecar `.md5` files written at close time; the sync script uses these for efficient incremental downloads without re-hashing
+- **Webhook fan-out** — ntfy sidecar fires an event on each completed segment; plug in transcription, alerting, or anything else
+- **Pre-built image** — `lbrtx01/hls-ring-recorder` on Docker Hub; no build step needed
+
+---
 
 The recorder uses ffmpeg's `-segment_wrap` to implement the ring:
 
@@ -42,6 +53,119 @@ The pod runs three containers:
 Segments are written to a PersistentVolumeClaim (`/data`) and served read-only by OpenResty.
 When ffmpeg finishes writing a segment, the recorder POSTs a webhook to the ntfy sidecar, which
 fans the notification out to any subscribers.
+
+---
+
+## Quick Start (Docker Compose)
+
+No checkout required — create a single `docker-compose.yml`, set one environment variable, and
+start:
+
+```yaml
+services:
+  recorder:
+    image: lbrtx01/hls-ring-recorder:latest
+    environment:
+      HLS_STREAM: "${HLS_STREAM}"
+      SEGMENT_TIME: "200"
+      SEGMENT_WRAP: "400"
+      WEBHOOK_URL: "http://ntfy:8081/ring-segments"
+    volumes:
+      - segments:/data
+    depends_on:
+      - ntfy
+
+  ntfy:
+    image: binwiederhier/ntfy:v2.19.2
+    command: serve
+    environment:
+      NTFY_LISTEN_HTTP: ":8081"
+    ports:
+      - "8081:8081"
+
+  nginx:
+    image: openresty/openresty:1.29.2.1-noble
+    ports:
+      - "8080:8080"
+    volumes:
+      - segments:/data:ro
+    configs:
+      - source: nginx_config
+        target: /etc/nginx/conf.d/default.conf
+    depends_on:
+      - recorder
+
+volumes:
+  segments:
+
+configs:
+  nginx_config:
+    content: |
+      server {
+          listen 8080;
+          root /data;
+          access_log /dev/stdout;
+          error_log /dev/stderr warn;
+          autoindex on;
+          autoindex_exact_size off;
+          autoindex_localtime on;
+
+          location ~* \.md5$ {
+              return 404;
+          }
+
+          header_filter_by_lua_block {
+              if ngx.req.get_method() ~= "HEAD" then
+                  return
+              end
+              local path = ngx.var.request_filename
+              local sf = io.open(path .. ".md5", "r")
+              if sf then
+                  local digest = sf:read("l")
+                  sf:close()
+                  if digest and #digest == 24 then
+                      ngx.header["Content-MD5"] = digest
+                      return
+                  end
+              end
+              local f = io.open(path, "rb")
+              if not f then return end
+              local md5 = require "resty.md5"
+              local m = md5:new()
+              local ok, err = pcall(function()
+                  while true do
+                      local chunk = f:read(65536)
+                      if not chunk then break end
+                      m:update(chunk)
+                  end
+              end)
+              f:close()
+              if not ok then return end
+              ngx.header["Content-MD5"] = ngx.encode_base64(m:final())
+          }
+      }
+```
+
+> The inline `configs.content` syntax requires Docker Compose v2.23.0 or later
+> (`docker compose version`).
+
+Then start:
+
+```bash
+export HLS_STREAM=http://<camera-ip>/hls/stream.m3u8
+docker compose up -d
+```
+
+| Port | Service                          |
+| ---- | -------------------------------- |
+| 8080 | OpenResty — browse/download `.ts` segments |
+| 8081 | ntfy — segment-completion events |
+
+Subscribe to segment notifications:
+
+```bash
+curl -s http://localhost:8081/ring-segments/json
+```
 
 ---
 
@@ -194,8 +318,8 @@ You can also override on the command line: `make docker-build FFMPEG_CFLAGS="-O3
 | `SEGMENT_TIME`        | `200`                                         | Duration of each segment in seconds                                                          |
 | `SEGMENT_WRAP`        | `400`                                         | Number of segments in the ring buffer — **max 999** (segment filenames use a 3-digit format) |
 | `POLL_INTERVAL`       | `15`                                          | Seconds between stream availability checks                                                   |
-| `BLANK_TIMEOUT`       | `60`                                          | Seconds of black screen before recording stops                                               |
-| `LUMA_THRESHOLD`      | `15`                                          | Minimum luma (0–255) for a frame to be considered non-black                                  |
+| `BLANK_TIMEOUT`       | `60`                                          | Seconds of continuous black screen before recording stops (see Black screen detection)       |
+| `LUMA_THRESHOLD`      | `15`                                          | Minimum luma (0–255) for a frame to be considered non-black; single pixel sampled per check  |
 | `PVC_SIZE`            | `10Gi`                                        | Persistent volume size                                                                       |
 | `NODE_SELECTOR_KEY`   | `kubernetes.io/hostname`                      | Node selector label key                                                                      |
 | `NODE_SELECTOR_VALUE` | `talos-k86-gbo`                               | Node selector label value                                                                    |
