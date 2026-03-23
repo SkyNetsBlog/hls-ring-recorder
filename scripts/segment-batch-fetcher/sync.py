@@ -1,12 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "requests",
-#   "beautifulsoup4",
-#   "tqdm",
-# ]
-# ///
-
 import argparse
 import base64
 import hashlib
